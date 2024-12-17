@@ -1,0 +1,160 @@
+services:
+  accountsdb:
+    container_name: accountsdb
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: accountsdb
+    restart: always
+    extends:
+      file: common-config.yml
+      service: microservice-db-config
+  loansdb:
+    container_name: loansdb
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE: loansdb
+    restart: always
+    extends:
+      file: common-config.yml
+      service: microservice-db-config
+  cardsdb:
+    container_name: cardsdb
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_DATABASE: cardsdb
+    restart: always
+    extends:
+      file: common-config.yml
+      service: microservice-db-config
+
+  rabbit:
+    image: rabbitmq:4.0-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: rabbitmq-diagnostics check_port_connectivity
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
+  config-server:
+    image: "jadhavsanjay64/configserver:v1"
+    container_name: config-server-ms
+    ports:
+      - "8071:8071"
+    depends_on:
+      rabbit:
+        condition: service_healthy
+    healthcheck:
+      test: "wget -T5 -qO- http://localhost:8071/actuator/health/readiness | grep UP || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      SPRING_APPLICATION_NAME: "config-server"
+    restart: always
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
+  eurekaserver:
+    image: "jadhavsanjay64/eurekaserver:v1"
+    container_name: eurekaserver-ms
+    ports:
+      - "8070:8070"
+    healthcheck:
+      test: "wget -T5 -qO- http://localhost:8070/actuator/health/readiness | grep UP || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      SPRING_APPLICATION_NAME: "eurekaserver"
+    restart: always
+    extends:
+      file: common-config.yml
+      service: microservice-configserver-config
+
+  accounts:
+    image: "jadhavsanjay64/accounts:v1"
+    container_name: accounts-ms
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_APPLICATION_NAME: "accounts"
+      SPRING_DATASOURCE_URL: jdbc:mysql://accountsdb:3306/accountsdb
+      SPRING_CONFIG_IMPORT: "configserver:http://config-server:8071/"
+      SPRING_PROFILE_ACTIVE: "default"
+    restart: always
+    depends_on:
+      accountsdb:
+        condition: service_healthy
+    extends:
+      file: common-config.yml
+      service: microservice-eurekaserver-config
+
+  loan:
+    image: "jadhavsanjay64/loan:v1"
+    container_name: loan-ms
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_APPLICATION_NAME: "loan"
+      SPRING_DATASOURCE_URL: jdbc:mysql://loansdb:3306/loansdb
+      SPRING_CONFIG_IMPORT: "configserver:http://config-server:8071/"
+      SPRING_PROFILE_ACTIVE: "default"
+    restart: always
+    depends_on:
+      loansdb:
+        condition: service_healthy
+    extends:
+      file: common-config.yml
+      service: microservice-eurekaserver-config
+
+  cards:
+    image: "jadhavsanjay64/cards:v1"
+    container_name: cards-ms
+    ports:
+      - "9000:9000"
+    environment:
+      SPRING_APPLICATION_NAME: "cards"
+      SPRING_DATASOURCE_URL: jdbc:mysql://cardsdb:3306/cardsdb
+      SPRING_CONFIG_IMPORT: "configserver:http://config-server:8071/"
+      SPRING_PROFILE_ACTIVE: "default"
+    restart: always
+    depends_on:
+      cardsdb:
+        condition: service_healthy
+    extends:
+      file: common-config.yml
+      service: microservice-eurekaserver-config
+
+#  mysqldb:
+#    container_name: mysqldb
+#    image: mysql
+#    ports:
+#      - 3306:3306
+#    expose:
+#      - "3306"
+#    environment:
+#      MYSQL_DATABASE: accounts
+#      MYSQL_ROOT_PASSWORD: root
+#      MYSQL_PASSWORD: root
+#    restart: always
+#    extends:
+#      file: common-config.yml
+#      service: network-deploy-service
+
+networks:
+  bankApp:
+    driver: "bridge"
